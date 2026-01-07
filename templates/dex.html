@@ -136,6 +136,18 @@
       font-size: 13px;
       color: #555;
     }
+    .chart-wrap {
+      max-width: 420px;
+      height: 280px;
+      position: relative;
+    }
+
+    #stats-chart {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+
   </style>
 </head>
 <body>
@@ -174,12 +186,16 @@
           <pre id="mon-abilities"></pre>
         </div>
 
-        <div id="section-stats" style="display:none;">
+      <div id="section-stats" style="display:none;">
         <div class="section-title">Stats</div>
-        <div style="max-width: 420px;">
-          <canvas id="stats-chart" height="280"></canvas>
+        <div id="stats-total-text" style="margin: 2px 0 8px; color:#444; font-weight:700;"></div>
+
+        <div class="chart-wrap">
+          <canvas id="stats-chart"></canvas>
         </div>
       </div>
+
+
 
 
         <div id="section-notes" style="display:none;">
@@ -228,6 +244,125 @@
     const cardEl = document.getElementById('mon-card');
   const statsCanvas = document.getElementById('stats-chart');
   let statsChart = null;
+  const outsideStatLabelsPlugin = {
+  id: "outsideStatLabels",
+  afterDraw(chart) {
+    const { ctx } = chart;
+    const scale = chart.scales.r;
+    if (!scale) return;
+
+    const labels = chart.data.labels;
+    const values = chart.data.datasets[0].data;
+
+    const cx = scale.xCenter;
+    const cy = scale.yCenter;
+
+    // distance just outside the outer ring
+    const r = scale.drawingArea + 28;
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (let i = 0; i < labels.length; i++) {
+      if (labels[i] === "Speed") continue;
+      const angle = scale.getIndexAngle(i) - Math.PI / 2;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+
+      // label (dark gray)
+      ctx.font = "700 13px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.fillStyle = "rgba(50,50,50,0.95)";
+      ctx.fillText(labels[i], x, y - 10);
+
+      // value (black)
+      ctx.font = "800 18px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.fillStyle = "rgba(0,0,0,0.98)";
+      ctx.fillText(String(values[i]), x, y + 12);
+    }
+
+        
+        // --- SPEED + TOTAL (stacked under the radar, no overlap) ---
+        const total = values.reduce((a, b) => a + b, 0);
+
+        // Find Speed index safely
+        const speedIndex = labels.indexOf("Speed");
+        const speedValue = speedIndex >= 0 ? values[speedIndex] : "";
+
+        // “Base” position just under the radar
+        let y0 = cy + scale.drawingArea + 18;
+
+        // Speed label
+        ctx.font = "700 13px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.fillStyle = "rgba(50,50,50,0.95)";
+        ctx.fillText("Speed", cx, y0);
+
+        // Speed value
+        y0 += 20;
+        ctx.font = "800 18px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.fillStyle = "rgba(0,0,0,0.98)";
+        ctx.fillText(String(speedValue), cx, y0);
+
+
+    ctx.restore();
+    }
+
+    
+  };
+
+  const statWedgesPlugin = {
+  id: "statWedges",
+  beforeDatasetsDraw(chart) {
+    const scale = chart.scales.r;
+    if (!scale) return;
+
+    const { ctx } = chart;
+    const labels = chart.data.labels;
+    const values = chart.data.datasets[0].data;
+
+    // Must match STAT_MIN/STAT_MAX from renderStatsRadar
+    const STAT_MIN = 20;
+    const STAT_MAX = 160;
+
+    const cx = scale.xCenter;
+    const cy = scale.yCenter;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-over"; // draw behind polygon
+
+    for (let i = 0; i < labels.length; i++) {
+      const v = values[i];
+      const t = (v - STAT_MIN) / (STAT_MAX - STAT_MIN);
+     
+
+      // angle for this axis
+      const angle = scale.getIndexAngle(i) - Math.PI / 2;
+
+      // radius to this stat value
+      const vr = scale.getDistanceFromCenterForValue(v);
+
+      // soft ray: center transparent -> toward edge colored
+      const x2 = cx + Math.cos(angle) * vr;
+      const y2 = cy + Math.sin(angle) * vr;
+
+      const grad = ctx.createLinearGradient(cx, cy, x2, y2);
+      grad.addColorStop(0.00, "rgba(0,0,0,0)");
+      grad.addColorStop(0.40, statToColor(t, 0.00));
+      grad.addColorStop(1.00, statToColor(t, 0.25)); // intensity
+
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 18; // thickness of the wedge/ray
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+};
+
+
 
   function lerp(a, b, t) { return a + (b - a) * t; }
 
@@ -242,6 +377,33 @@
       point: `rgb(${r}, ${g}, ${b})`,
     };
   }
+    function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+// strong, punchy green -> yellow -> red for points
+function statToRGB(t) {
+  t = clamp01(t);
+
+  // Two-stage: green->yellow (0..0.5), yellow->red (0.5..1)
+  let r, g, b;
+  if (t < 0.5) {
+    const u = t / 0.5;
+    r = Math.round(lerp( 50, 255, u)); // 50 -> 255
+    g = Math.round(lerp(200, 220, u)); // 200 -> 220
+    b = Math.round(lerp( 70,  40, u)); // 70 -> 40
+  } else {
+    const u = (t - 0.5) / 0.5;
+    r = 255;
+    g = Math.round(lerp(220,  40, u)); // 220 -> 40
+    b = Math.round(lerp( 40,  40, u)); // keep low blue
+  }
+  return { r, g, b };
+}
+
+function statToColor(t, alpha = 1) {
+  const { r, g, b } = statToRGB(t);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 
   function pickStat(statMap, keys) {
     for (const k of keys) {
@@ -267,24 +429,33 @@
 
 
     const ordered = [
-      ["HP", hp],
-      ["Attack", atk],
-      ["Defense", def],
-      ["Sp. Atk", spa],
-      ["Sp. Def", spd],
-      ["Speed", spe],
-    ].filter(([_, v]) => v !== null);
+    ["HP", hp],
+    ["Attack", atk],
+    ["Defense", def],
+    ["Speed", spe],     // <-- moved up
+    ["Sp. Def", spd],
+    ["Sp. Atk", spa],   // <-- moved down
+  ].filter(([_, v]) => v !== null);
+
 
     if (ordered.length < 3) return;
 
     const labels = ordered.map(([l]) => l);
     const values = ordered.map(([_, v]) => v);
     const total = values.reduce((a, b) => a + b, 0);
+    document.getElementById("stats-total-text").textContent = `Total: ${total}`;
 
-    const avg = values.reduce((a, b) => a + b, 0) / values.length;
-    const t = (avg - 30) / (120 - 30); // adjust range if needed
-    const c = colorGreenToRed(t);
+    // Tune these to your stat system:
+    const STAT_MIN = 20;
+    const STAT_MAX = 160;
 
+    // Per-point colors based on each stat value
+    const pointColors = values.map(v => {
+      const t = (v - STAT_MIN) / (STAT_MAX - STAT_MIN);
+      return statToColor(t, 1);
+    });
+
+  
     if (statsChart) statsChart.destroy();
 
     statsChart = new Chart(statsCanvas, {
@@ -292,36 +463,36 @@
       data: {
         labels,
         datasets: [
-                {
+                    {
                   label: "Stats",
                   data: values,
-                  backgroundColor: c.fill,
-                  borderColor: c.stroke,
-                  pointBackgroundColor: c.point,
+
+                  // subtle fill so wedges are the “main” visual
+                  backgroundColor: "rgba(0,0,0,0.06)",
+                  borderColor: "rgba(0,0,0,0.35)",
                   borderWidth: 2,
-                  pointRadius: 4,
-                  pointHoverRadius: 5,
-                },
-                {
-                  // Invisible dataset that creates a hover target near the center
-                  label: "Total",
-                  data: values.map(() => 0),      // all zeros => center of radar
-                  pointRadius: 15,                 // invisible
-                  pointHoverRadius: 15,           // BUT hoverable “target”
-                  borderWidth: 0,
-                  backgroundColor: "rgba(0,0,0,0)",
+
+                  // per-point color
+                  pointBackgroundColor: pointColors,
+                  pointBorderColor: pointColors,
+                  pointRadius: 5,
+                  pointHoverRadius: 6,
                 }
+
               ]
 
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: {
+          padding: { top: 60, bottom: 60, left: 40, right: 40 }
+        },
         plugins: {
             legend: { display: false },
             tooltip: {
                 callbacks: {
-                  title: () => "Total",
+                  title: () => "",
                   label: (ctx) => {
                     // Only show Total once (for the first axis)
                     if (ctx.dataset.label === "Total") {
@@ -340,10 +511,14 @@
             beginAtZero: true,
             suggestedMin: 0,
             suggestedMax: 160,
-            ticks: { display: false },
+            ticks: { display: false },        // hide 40/80/120...
+            pointLabels: { display: false },  // hide Chart.js default HP/Attack text
+            angleLines: { color: "rgba(0,0,0,0.18)" },
+            grid: { color: "rgba(0,0,0,0.18)", circular: false },
           }
         }
-      }
+      },
+      plugins: [statWedgesPlugin, outsideStatLabelsPlugin],
     });
   } 
 
