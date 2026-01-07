@@ -175,9 +175,12 @@
         </div>
 
         <div id="section-stats" style="display:none;">
-          <div class="section-title">Stats</div>
-          <div class="stats-grid" id="mon-stats-grid"></div>
+        <div class="section-title">Stats</div>
+        <div style="max-width: 420px;">
+          <canvas id="stats-chart" height="280"></canvas>
         </div>
+      </div>
+
 
         <div id="section-notes" style="display:none;">
           <div class="section-title">Notes</div>
@@ -193,6 +196,8 @@
       </div>
     </div>
   </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <!-- Dump all data into JS once -->
   <script>
@@ -210,7 +215,6 @@
     const cardDesc    = document.getElementById('mon-description');
     const cardMoves   = document.getElementById('mon-moves');
     const cardAbils   = document.getElementById('mon-abilities');
-    const cardStats   = document.getElementById('mon-stats-grid');
     const cardNotes   = document.getElementById('mon-notes');
     const imgEl       = document.getElementById('mon-image');
     const noImgText   = document.getElementById('no-image-text');
@@ -222,6 +226,126 @@
     const sectionStats = document.getElementById('section-stats');
     const sectionNotes = document.getElementById('section-notes');
     const cardEl = document.getElementById('mon-card');
+  const statsCanvas = document.getElementById('stats-chart');
+  let statsChart = null;
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function colorGreenToRed(t, alpha = 0.22) {
+    t = Math.max(0, Math.min(1, t));
+    const r = Math.round(lerp(46, 220, t));
+    const g = Math.round(lerp(204, 60, t));
+    const b = Math.round(lerp(113, 60, t));
+    return {
+      fill: `rgba(${r}, ${g}, ${b}, ${alpha})`,
+      stroke: `rgb(${r}, ${g}, ${b})`,
+      point: `rgb(${r}, ${g}, ${b})`,
+    };
+  }
+
+  function pickStat(statMap, keys) {
+    for (const k of keys) {
+      if (k in statMap && Number.isFinite(statMap[k])) return statMap[k];
+    }
+    return null;
+  }
+
+  function renderStatsRadar(mon) {
+    const statMap = {};
+    if (mon.stats) {
+      for (const [k, v] of Object.entries(mon.stats)) {
+        statMap[String(k).toLowerCase().trim()] = Number(v);
+      }
+    }
+
+    const hp  = pickStat(statMap, ["hp"]);
+    const atk = pickStat(statMap, ["attack", "atk"]);
+    const def = pickStat(statMap, ["defense", "defence", "def"]);
+    const spa = pickStat(statMap, ["special attack", "sp. atk", "sp atk", "sp_atk", "special_atk"]);
+    const spd = pickStat(statMap, ["special defense", "special defence", "sp. def", "sp def", "sp_def", "special_def"]);
+    const spe = pickStat(statMap, ["speed", "spe"]);
+
+
+    const ordered = [
+      ["HP", hp],
+      ["Attack", atk],
+      ["Defense", def],
+      ["Sp. Atk", spa],
+      ["Sp. Def", spd],
+      ["Speed", spe],
+    ].filter(([_, v]) => v !== null);
+
+    if (ordered.length < 3) return;
+
+    const labels = ordered.map(([l]) => l);
+    const values = ordered.map(([_, v]) => v);
+    const total = values.reduce((a, b) => a + b, 0);
+
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const t = (avg - 30) / (120 - 30); // adjust range if needed
+    const c = colorGreenToRed(t);
+
+    if (statsChart) statsChart.destroy();
+
+    statsChart = new Chart(statsCanvas, {
+      type: "radar",
+      data: {
+        labels,
+        datasets: [
+                {
+                  label: "Stats",
+                  data: values,
+                  backgroundColor: c.fill,
+                  borderColor: c.stroke,
+                  pointBackgroundColor: c.point,
+                  borderWidth: 2,
+                  pointRadius: 4,
+                  pointHoverRadius: 5,
+                },
+                {
+                  // Invisible dataset that creates a hover target near the center
+                  label: "Total",
+                  data: values.map(() => 0),      // all zeros => center of radar
+                  pointRadius: 15,                 // invisible
+                  pointHoverRadius: 15,           // BUT hoverable “target”
+                  borderWidth: 0,
+                  backgroundColor: "rgba(0,0,0,0)",
+                }
+              ]
+
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                  title: () => "Total",
+                  label: (ctx) => {
+                    // Only show Total once (for the first axis)
+                    if (ctx.dataset.label === "Total") {
+                      if (ctx.dataIndex !== 0) return null; // hide duplicates
+                      const total = values.reduce((a, b) => a + b, 0);
+                      return `Total: ${total}`;
+                    }
+                    return `${ctx.label}: ${ctx.raw}`;
+                  }
+                }
+              }
+          },
+
+        scales: {
+          r: {
+            beginAtZero: true,
+            suggestedMin: 0,
+            suggestedMax: 160,
+            ticks: { display: false },
+          }
+        }
+      }
+    });
+  } 
 
 
 
@@ -274,39 +398,15 @@
         sectionAbils.style.display = 'none';
       }
 
-      // === Stats ===
-      cardStats.innerHTML = '';
+            // === Stats (radar chart) ===
       if (mon.stats && Object.keys(mon.stats).length) {
         sectionStats.style.display = '';
-        for (const [label, value] of Object.entries(mon.stats)) {
-          const labelDiv = document.createElement('div');
-          labelDiv.className = 'stat-label';
-          labelDiv.textContent = label.replace(/\b\w/g, c => c.toUpperCase());
-          const valDiv = document.createElement('div');
-          valDiv.textContent = value;
-          cardStats.appendChild(labelDiv);
-          cardStats.appendChild(valDiv);
-        }
-      } else if (mon.stats_raw) {
-        sectionStats.style.display = '';
-        const labelDiv = document.createElement('div');
-        labelDiv.className = 'stat-label';
-        labelDiv.textContent = 'Stats';
-        const valDiv = document.createElement('div');
-        valDiv.textContent = mon.stats_raw;
-        cardStats.appendChild(labelDiv);
-        cardStats.appendChild(valDiv);
+        renderStatsRadar(mon);
       } else {
         sectionStats.style.display = 'none';
+        if (statsChart) { statsChart.destroy(); statsChart = null; }
       }
 
-      // === Notes ===
-      if (mon.notes) {
-        sectionNotes.style.display = '';
-        cardNotes.textContent = mon.notes;
-      } else {
-        sectionNotes.style.display = 'none';
-      }
 
             // === Image + background watermark ===
       if (mon.image_url) {
