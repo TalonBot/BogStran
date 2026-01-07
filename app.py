@@ -3,6 +3,9 @@ import csv
 import io
 import re
 import requests
+import time
+import hashlib
+
 
 app = Flask(__name__)
 
@@ -91,11 +94,9 @@ def normalize_image_url(url: str) -> str:
 
 
 
-def fetch_mons():
-    """Fetch CSV from Google and convert to a list of mon dicts."""
-    resp = requests.get(CSV_URL)
-    resp.raise_for_status()
-    f = io.StringIO(resp.text)
+def parse_mons_from_csv_text(text: str):
+    """Parse CSV text and convert to a list of mon dicts."""
+    f = io.StringIO(text)
     reader = list(csv.reader(f))
 
     if not reader:
@@ -108,12 +109,11 @@ def fetch_mons():
     # B = custom moves
     # C = abilities
     # D = stats text
-    # E = image URL 
+    # E = image URL
     for row in reader[1:]:
         row = row + [""] * (7 - len(row))  # pad safety
         colA, colB, colC, colD, colE, colF, colG = row[:7]
 
-        # Column A: first line = name, rest = description
         lines = [l for l in colA.splitlines() if l.strip()]
         if not lines:
             continue
@@ -128,27 +128,61 @@ def fetch_mons():
             "id": slugify(name),
             "name": name,
             "description": description,
-            "types": types,  # list like ["Grass", "Ghost"]
+            "types": types,
             "moves_raw": colB,
             "abilities_raw": colC,
             "stats_raw": colD,
             "stats": parse_stats(colD),
-            "image_url": normalize_image_url(colE)
+            "image_url": normalize_image_url(colE),
         }
         mons.append(mon)
-        print(name, "=>", mon["image_url"])
+
     return mons
 
+CHECK_SECONDS = 30  # how often to check Google Sheet for changes
 
-# === Load sheet once at startup ===
-MONS = fetch_mons()
-MONS_BY_ID = {m["id"]: m for m in MONS}
+_last_check = 0.0
+_last_hash = None
+_cached_mons = []
+
+
+def get_mons_smart():
+    """
+    Check the sheet occasionally. Only re-parse if the CSV content changed.
+    """
+    global _last_check, _last_hash, _cached_mons
+
+    now = time.time()
+
+    # If we've checked recently, return cached data
+    if _cached_mons and (now - _last_check) < CHECK_SECONDS:
+        return _cached_mons
+
+    resp = requests.get(CSV_URL, timeout=15)
+    resp.raise_for_status()
+    csv_text = resp.text
+
+    # fingerprint the CSV text
+    h = hashlib.sha256(csv_text.encode("utf-8")).hexdigest()
+
+    _last_check = now
+
+    # If unchanged, keep cached parsed result
+    if h == _last_hash and _cached_mons:
+        return _cached_mons
+
+    # Changed -> parse and update cache
+    _last_hash = h
+    _cached_mons = parse_mons_from_csv_text(csv_text)
+    return _cached_mons
+
 
 
 @app.route("/")
 def dex():
     # Single page app: send all mons at once
-    return render_template("dex.html", mons=MONS)
+    return render_template("dex.html", mons=get_mons_smart())
+
 
 
 if __name__ == "__main__":
