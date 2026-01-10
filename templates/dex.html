@@ -32,7 +32,10 @@
       font-size: 14px;
       line-height: 1.3;
       cursor: pointer;
+      position: relative;
+      overflow: hidden;
     }
+
     .mon-link:hover {
       background: #333;
     }
@@ -41,6 +44,59 @@
       color: white;
       font-weight: 600;
     }
+
+        /* silhouette background layer for each sidebar mon */
+    .mon-link::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+
+      background-image: var(--mon-bg);
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      background-size: 70px auto;
+
+      opacity: 0.3;
+      filter: grayscale(1) contrast(1.15);
+      pointer-events: none;
+      z-index: 0;
+
+      /* smooth slide + fade */
+      transform: translateX(0);
+      transition: transform 180ms ease, opacity 180ms ease, filter 180ms ease;
+    }
+
+    /* keep the text above the silhouette */
+    .mon-link > span {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* active item: slightly stronger silhouette */
+    .mon-link.active::before {
+      opacity: 0.9;
+      transform: translateX(-55px);
+      filter: none
+    }
+
+    /* hover: slightly stronger silhouette */
+    .mon-link:hover::before {
+      opacity: 0.9;
+      transform: translateX(-55px);
+      filter: none;
+      transition: transform 180ms ease, opacity 180ms ease, filter 180ms ease;
+    }
+
+    /* Default background if JS doesn't set a type gradient */
+    .mon-link.active {
+      background: var(--sel-bg, #3f76ff);
+    }
+
+    /* Slight gloss so text stays readable on light types */
+    .mon-link.active {
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+    }
+
 
     .main {
       flex: 1;
@@ -156,8 +212,8 @@
     <h2>Fakemon</h2>
     <div id="mon-list">
       {% for m in mons %}
-        <div class="mon-link" data-id="{{ m.id }}">
-          {{ m.name }}
+        <div class="mon-link" data-id="{{ m.id }}" data-img="{{ m.image_url }}">
+          <span>{{ m.name }}</span>
         </div>
       {% endfor %}
     </div>
@@ -242,8 +298,47 @@
     const sectionStats = document.getElementById('section-stats');
     const sectionNotes = document.getElementById('section-notes');
     const cardEl = document.getElementById('mon-card');
-  const statsCanvas = document.getElementById('stats-chart');
-  let statsChart = null;
+    const statsCanvas = document.getElementById('stats-chart');
+    let statsChart = null;
+
+    const TYPE_COLORS = {
+      normal:  "#A8A77A",
+      fire:    "#EE8130",
+      water:   "#6390F0",
+      electric:"#F7D02C",
+      grass:   "#7AC74C",
+      ice:     "#96D9D6",
+      fighting:"#C22E28",
+      poison:  "#A33EA1",
+      ground:  "#E2BF65",
+      flying:  "#A98FF3",
+      psychic: "#F95587",
+      bug:     "#A6B91A",
+      rock:    "#B6A136",
+      ghost:   "#735797",
+      dragon:  "#6F35FC",
+      dark:    "#705746",
+      steel:   "#B7B7CE",
+      fairy:   "#D685AD",
+    };
+
+    function typeColor(t) {
+      if (!t) return "#3f76ff";
+      return TYPE_COLORS[String(t).toLowerCase()] || "#3f76ff";
+    }
+
+
+
+        for (const el of monListEl.querySelectorAll(".mon-link")) {
+          const id = el.dataset.id;
+          const mon = monsById[id];
+          if (mon && mon.image_url) {
+            el.style.setProperty("--mon-bg", `url("${mon.image_url}")`);
+          } else {
+            el.style.setProperty("--mon-bg", "none");
+          }
+        }
+
   const outsideStatLabelsPlugin = {
   id: "outsideStatLabels",
   afterDraw(chart) {
@@ -529,9 +624,43 @@ function statToColor(t, alpha = 1) {
       if (!mon) return;
 
       // Active in sidebar
+      let activeEl = null;
       for (const el of monListEl.querySelectorAll('.mon-link')) {
-        el.classList.toggle('active', el.dataset.id === monId);
+        const isActive = el.dataset.id === monId;
+        el.classList.toggle('active', isActive);
+
+        if (isActive) activeEl = el;
+        else el.style.removeProperty("--sel-bg");
       }
+
+      // === Apply type-colored background to selected sidebar item ===
+      // === Apply type-colored background to selected sidebar item ===
+      if (activeEl) {
+        // Normalize types to an array: [] / ["Ice"] / ["Ice","Grass"]
+        const types = Array.isArray(mon.types)
+          ? mon.types
+          : [mon.type1 ?? mon.type ?? "", mon.type2 ?? ""].filter(Boolean);
+
+        const t1 = (types[0] ?? "").toString().trim();
+        const t2 = (types[1] ?? "").toString().trim();
+
+        if (!t1) {
+          // No type info → fall back to default CSS color
+          activeEl.style.removeProperty("--sel-bg");
+        } else {
+          const c1 = typeColor(t1);
+          const c2 = typeColor(t2 || t1); // single-type mons use same color on both halves
+
+          // If you prefer a solid color for single-type, swap this if-block (see below)
+          activeEl.style.setProperty(
+            "--sel-bg",
+            `linear-gradient(90deg, ${c1} 0%, ${c1} 50%, ${c2} 50%, ${c2} 100%)`
+          );
+        }
+      }
+
+
+
 
       cardName.textContent = mon.name || '';
 
