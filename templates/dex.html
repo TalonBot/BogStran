@@ -2,214 +2,20 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Fakemon Dex</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-      display: flex;
-      height: 100vh;
-    }
-    .sidebar {
-      width: 220px;
-      background: #111;
-      color: #eee;
-      padding: 12px;
-      overflow-y: auto;
-    }
-    .sidebar h2 {
-      font-size: 18px;
-      margin: 0 0 8px;
-      text-align: center;
-    }
-    .mon-link {
-      display: block;
-      padding: 6px 8px;
-      margin-bottom: 4px;
-      text-decoration: none;
-      color: #eee;
-      border-radius: 4px;
-      font-size: 14px;
-      line-height: 1.3;
-      cursor: pointer;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .mon-link:hover {
-      background: #333;
-    }
-    .mon-link.active {
-      background: #4b7bec;
-      color: white;
-      font-weight: 600;
-    }
-
-        /* silhouette background layer for each sidebar mon */
-    .mon-link::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-
-      background-image: var(--mon-bg);
-      background-repeat: no-repeat;
-      background-position: right 10px center;
-      background-size: 70px auto;
-
-      opacity: 0.3;
-      filter: grayscale(1) contrast(1.15);
-      pointer-events: none;
-      z-index: 0;
-
-      /* smooth slide + fade */
-      transform: translateX(0);
-      transition: transform 180ms ease, opacity 180ms ease, filter 180ms ease;
-    }
-
-    /* keep the text above the silhouette */
-    .mon-link > span {
-      position: relative;
-      z-index: 1;
-    }
-
-    /* active item: slightly stronger silhouette */
-    .mon-link.active::before {
-      opacity: 0.9;
-      transform: translateX(-55px);
-      filter: none
-    }
-
-    /* hover: slightly stronger silhouette */
-    .mon-link:hover::before {
-      opacity: 0.9;
-      transform: translateX(-55px);
-      filter: none;
-      transition: transform 180ms ease, opacity 180ms ease, filter 180ms ease;
-    }
-
-    /* Default background if JS doesn't set a type gradient */
-    .mon-link.active {
-      background: var(--sel-bg, #3f76ff);
-    }
-
-    /* Slight gloss so text stays readable on light types */
-    .mon-link.active {
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
-    }
-
-
-    .main {
-      flex: 1;
-      background: #f5f5f5;
-      padding: 16px 24px;
-      overflow-y: auto;
-    }
-    .card {
-      background: white;
-      border-radius: 8px;
-      padding: 16px 20px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      max-width: 900px;
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr);
-      gap: 20px;
-    }
-        /* --- Card background watermark layer --- */
-    .card {
-      position: relative;          /* needed for pseudo-element */
-      overflow: hidden;            /* keep bg inside rounded corners */
-    }
-
-    /* background image layer */
-    .card::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background-image: var(--bg-img);
-      background-repeat: no-repeat;
-      background-position: right center;
-      background-size: cover;
-      opacity: 0.12;               /* transparency */
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    /* make sure actual content sits above the bg */
-    .card > * {
-      position: relative;
-      z-index: 1;
-    }
-
-    .card-header {
-      border-bottom: 1px solid #eee;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-    }
-    .card-header h1 {
-      margin: 0;
-      font-size: 24px;
-    }
-
-    .type-icons {
-      margin-top: 8px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .section-title {
-      font-size: 14px;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      color: #888;
-      margin: 16px 0 4px;
-    }
-    pre {
-      white-space: pre-wrap;
-      font-family: inherit;
-      font-size: 14px;
-      margin: 0;
-    }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 4px 12px;
-      font-size: 14px;
-    }
-    .stat-label {
-      font-weight: 600;
-    }
-    .mon-image {
-      width: 100%;
-      height: auto;          /* <-- no hardcoded height */
-      max-height: 360px;     /* optional safety cap, tweak or remove */
-      object-fit: contain;   /* <-- don't crop */
-      border-radius: 8px;
-      display: block;
-    }
-    .notes {
-      font-size: 13px;
-      color: #555;
-    }
-    .chart-wrap {
-      max-width: 420px;
-      height: 280px;
-      position: relative;
-    }
-
-    #stats-chart {
-      width: 100% !important;
-      height: 100% !important;
-      display: block;
-    }
-
-  </style>
+  <title>Spire-Dex</title>
+  <link rel="stylesheet" href="/static/dex.css">
 </head>
 <body>
 
   <aside class="sidebar">
-    <h2>Fakemon</h2>
+    <h2>Spiremon</h2>
+    <input
+      id="monSearch"
+      type="text"
+      placeholder="🔍 Search mons..."
+      autocomplete="off"
+    />
+
     <div id="mon-list">
       {% for m in mons %}
         <div class="mon-link" data-id="{{ m.id }}" data-img="{{ m.image_url }}">
@@ -226,6 +32,11 @@
           <h1 id="mon-name"></h1>
           <div id="type-icons" class="type-icons"></div>
         </div>
+
+          <div id="credits-wrap" style="display:none; margin: 6px 0 10px;">
+            <div style="font-weight:800; font-size:12px; letter-spacing:.4px; color:#555;">Credits</div>
+            <div id="mon-credits" style="font-size:13px; color:#333;"></div>
+          </div>
 
         <div id="section-info" style="display:none;">
           <div class="section-title">Info</div>
@@ -253,7 +64,6 @@
 
 
 
-
         <div id="section-notes" style="display:none;">
           <div class="section-title">Notes</div>
           <p class="notes" id="mon-notes"></p>
@@ -267,6 +77,16 @@
         </p>
       </div>
     </div>
+
+    <div id="section-learnset" style="display:none;">
+        <div class="section-title">Moves</div>
+
+        <div id="learnset-loading" style="display:none; font-size:13px; color:#666; margin:6px 0;">
+          Loading moves...
+        </div>
+
+        <div id="learnset-box"></div>
+      </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -299,6 +119,15 @@
     const sectionNotes = document.getElementById('section-notes');
     const cardEl = document.getElementById('mon-card');
     const statsCanvas = document.getElementById('stats-chart');
+    const creditsWrap = document.getElementById('credits-wrap');
+    const creditsEl = document.getElementById('mon-credits');
+
+    const sectionLearnset = document.getElementById('section-learnset');
+    const learnsetBox = document.getElementById('learnset-box');
+    const learnsetLoading = document.getElementById('learnset-loading');
+
+    const learnsetCache = {}; // monId -> learnset dict
+
     let statsChart = null;
 
     const TYPE_COLORS = {
@@ -678,13 +507,25 @@ function statToColor(t, alpha = 1) {
         });
       }
 
-      // === Info ===
-      if (mon.description) {
+      // === Info + Credits ===
+      if (mon.description || mon.credits) {
         sectionInfo.style.display = '';
-        cardDesc.textContent = mon.description;
+
+        // credits
+        if (mon.credits) {
+          creditsWrap.style.display = '';
+          creditsEl.textContent = mon.credits;
+        } else {
+          creditsWrap.style.display = 'none';
+          creditsEl.textContent = '';
+        }
+
+        // description
+        cardDesc.textContent = mon.description || '';
       } else {
         sectionInfo.style.display = 'none';
       }
+
 
       // === Moves ===
       if (mon.moves_raw) {
@@ -726,6 +567,10 @@ function statToColor(t, alpha = 1) {
         imgEl.src = mon.image_url;
         noImgText.style.display = 'none';
 
+        // === Learnset (from linked sheet) ===
+        loadLearnsetForMon(mon);
+
+
         // Set the semi-transparent background image
         cardEl.style.setProperty('--bg-img', `url("${mon.image_url}")`);
       } else {
@@ -735,6 +580,100 @@ function statToColor(t, alpha = 1) {
       }
 
     }
+
+    function catClass(catName) {
+      const k = String(catName || "").toLowerCase();
+
+      if (k.includes("level")) return "cat-level";
+      if (k.includes("tm")) return "cat-tms";
+      if (k.includes("hm")) return "cat-hms";
+      if (k.includes("egg")) return "cat-egg";
+
+      // If you don’t have HMs as a column, treat Tutor as “green”
+      if (k.includes("tutor")) return "cat-hms";
+
+      return ""; // default styling
+    }
+
+    function renderLearnsetUI(learnset) {
+      learnsetBox.innerHTML = '';
+      learnsetBox.className = 'learnset';
+
+      // Preferred order for your UI (HMs included if present)
+      const order = ['Level Up', 'TMs', 'HMs', 'Egg', 'Tutor'];
+
+      const keys = Object.keys(learnset || {});
+      const finalKeys = [
+        ...order.filter(k => keys.includes(k)),
+        ...keys.filter(k => !order.includes(k))
+      ];
+
+      if (!finalKeys.length) {
+        learnsetBox.innerHTML = `<div style="font-size:14px;color:#666;">No moves listed.</div>`;
+        return;
+      }
+
+      for (const cat of finalKeys) {
+        const moves = learnset[cat] || [];
+        const details = document.createElement('details');
+        details.open = false;
+
+        const cls = catClass(cat);
+        if (cls) details.classList.add(cls);
+
+        const summary = document.createElement('summary');
+        summary.textContent = `${cat} (${moves.length})`;
+
+        const ul = document.createElement('ul');
+        for (const mv of moves) {
+          const li = document.createElement('li');
+          li.textContent = mv;
+          ul.appendChild(li);
+        }
+
+        const listWrap = document.createElement('div');
+        listWrap.className = 'moves-list';
+        listWrap.appendChild(ul);
+
+        details.appendChild(summary);
+        details.appendChild(listWrap);
+        learnsetBox.appendChild(details);
+      }
+    }
+
+
+    async function loadLearnsetForMon(mon) {
+      // hide if no link
+      if (!mon.moves_link) {
+        sectionLearnset.style.display = 'none';
+        learnsetBox.innerHTML = '';
+        return;
+      }
+
+      sectionLearnset.style.display = '';
+      learnsetLoading.style.display = '';
+      learnsetBox.innerHTML = '';
+
+      // cached?
+      if (learnsetCache[mon.id]) {
+        learnsetLoading.style.display = 'none';
+        renderLearnsetUI(learnsetCache[mon.id]);
+        return;
+      }
+
+      try {
+        const resp = await fetch(`/api/learnset/${encodeURIComponent(mon.id)}`);
+        const data = await resp.json();
+        learnsetCache[mon.id] = data;
+
+        learnsetLoading.style.display = 'none';
+        renderLearnsetUI(data);
+      } catch (e) {
+        learnsetLoading.style.display = 'none';
+        learnsetBox.innerHTML = `<div style="font-size:13px;color:#b00;">Failed to load moves.</div>`;
+      }
+    }
+
 
     // Click handler
     monListEl.addEventListener('click', (e) => {
@@ -748,6 +687,35 @@ function statToColor(t, alpha = 1) {
     if (window.MONS.length) {
       renderMon(window.MONS[0].id);
     }
+
+    // === Search filter ===
+    const searchInput = document.getElementById('monSearch');
+
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.toLowerCase();
+      const items = document.querySelectorAll('.mon-link');
+
+      let firstVisible = null;
+
+      items.forEach(item => {
+        const name = item.textContent.toLowerCase();
+
+        if (name.includes(query)) {
+          item.style.display = '';
+          if (!firstVisible) firstVisible = item;
+        } else {
+          item.style.display = 'none';
+        }
+      });
+
+      // If the active mon gets filtered out, auto-select the first visible one
+      const active = document.querySelector('.mon-link.active');
+      if (active && active.style.display === 'none' && firstVisible) {
+        renderMon(firstVisible.dataset.id);
+      }
+    });
+
+    
   </script>
 </body>
 </html>

@@ -1,10 +1,12 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, jsonify
 import csv
 import io
 import re
 import requests
 import time
 import hashlib
+  
+
 
 
 app = Flask(__name__)
@@ -134,12 +136,17 @@ def parse_mons_from_csv_text(text: str):
             "stats_raw": colD,
             "stats": parse_stats(colD),
             "image_url": normalize_image_url(colE),
+
+            # NEW:
+            "credits": colF.strip(),
+            "moves_link": colG.strip(),
         }
+
         mons.append(mon)
 
     return mons
 
-CHECK_SECONDS = 30  # how often to check Google Sheet for changes
+CHECK_SECONDS = 5 * 60  # how often to check Google Sheet for changes
 
 _last_check = 0.0
 _last_hash = None
@@ -175,6 +182,148 @@ def get_mons_smart():
     _last_hash = h
     _cached_mons = parse_mons_from_csv_text(csv_text)
     return _cached_mons
+
+def _sheet_link_to_csv_url(url: str) -> str | None:
+    if not url:
+        return None
+
+    url = url.strip()
+
+    # Extract gid if present
+    gid_match = re.search(r"[#&?]gid=(\d+)", url)
+    gid = gid_match.group(1) if gid_match else "0"
+
+    # ✅ NEW: googleusercontent export links often contain the real sheet id near the end
+    # Example:
+    # https://doc-...googleusercontent.com/export/.../*/<SHEET_ID>?format=csv&gid=0
+    m = re.search(r"googleusercontent\.com/.*/([a-zA-Z0-9-_]{20,})\?", url)
+    if m:
+        sheet_id = m.group(1)
+        return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+
+    # Standard sheets link: /spreadsheets/d/<ID>
+    m = re.search(r"docs\.google\.com/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
+    if m:
+        sheet_id = m.group(1)
+        return f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+
+    # Published sheets link: /spreadsheets/d/e/<ID>/pubhtml
+    m = re.search(r"docs\.google\.com/spreadsheets/d/e/([a-zA-Z0-9-_]+)", url)
+    if m:
+        pub_id = m.group(1)
+        return f"https://docs.google.com/spreadsheets/d/e/{pub_id}/pub?output=csv&gid={gid}"
+
+    # Fallback: follow redirects (with User-Agent)
+    try:
+        r = requests.get(
+            url,
+            allow_redirects=True,
+            timeout=15,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        final = r.url
+
+        gid_match = re.search(r"[#&?]gid=(\d+)", final)
+        gid2 = gid_match.group(1) if gid_match else gid
+
+        m = re.search(r"docs\.google\.com/spreadsheets/d/([a-zA-Z0-9-_]+)", final)
+        if m:
+            sheet_id = m.group(1)
+            return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid2}"
+
+        m = re.search(r"docs\.google\.com/spreadsheets/d/e/([a-zA-Z0-9-_]+)", final)
+        if m:
+            pub_id = m.group(1)
+            return f"https://docs.google.com/spreadsheets/d/e/{pub_id}/pub?output=csv&gid={gid2}"
+    except Exception:
+        pass
+
+    return None
+
+
+
+
+# cache learnsets per CSV url
+_learnset_cache: dict[str, dict] = {}
+_learnset_cache_ts: dict[str, float] = {}
+
+LEARNSET_CACHE_SECONDS = 8 * 60  # keep in sync with main sheet check
+
+
+def _parse_learnset_csv(csv_text: str) -> dict:
+    """
+    Parses a learnset sheet where the FIRST ROW contains category headers
+    like: Level Up, TMs, Tutor, Egg (and maybe more columns).
+    Returns: { "Level Up": [...], "TMs": [...], ... }
+    """
+    f = io.StringIO(csv_text)
+    rows = list(csv.reader(f))
+
+    if not rows:
+        return {}
+
+    headers = [h.strip() for h in rows[0]]
+    out = {h: [] for h in headers if h}
+
+    for r in rows[1:]:
+        # pad row to headers length
+        r = r + [""] * (len(headers) - len(r))
+        for i, h in enumerate(headers):
+            if not h:
+                continue
+            cell = (r[i] or "").strip()
+            if cell:
+                out[h].append(cell)
+
+    # remove empty categories
+    out = {k: v for k, v in out.items() if v}
+    return out
+
+
+@app.route("/api/learnset/<mon_id>")
+def learnset(mon_id):
+    mons = get_mons_smart()
+    mon = next((m for m in mons if m["id"] == mon_id), None)
+    if not mon:
+        return jsonify({})
+
+    # TEMP HARD-CODE for testing:
+    link = (mon.get("moves_link") or "").strip()
+    csv_url = _sheet_link_to_csv_url(link)
+
+    print("MOVES LINK:", link)
+    print("CSV URL:", csv_url)
+
+    if not csv_url:
+        return jsonify({})
+
+    now = time.time()
+    if csv_url in _learnset_cache and (now - _learnset_cache_ts.get(csv_url, 0)) < LEARNSET_CACHE_SECONDS:
+        return jsonify(_learnset_cache[csv_url])
+
+    try:
+        resp = requests.get(
+            csv_url,
+            timeout=15,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+    except Exception as e:
+        print("LEARNSET REQUEST ERROR:", repr(e))
+        return jsonify({})
+
+    if resp.status_code != 200:
+        print("LEARNSET FETCH FAILED:", resp.status_code)
+        print("BODY:", resp.text[:300])
+        return jsonify({})
+
+    parsed = _parse_learnset_csv(resp.text)
+
+    _learnset_cache[csv_url] = parsed
+    _learnset_cache_ts[csv_url] = now
+    return jsonify(parsed)
+
+
+
 
 
 
